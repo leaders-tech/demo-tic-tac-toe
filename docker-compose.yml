@@ -1,0 +1,35 @@
+# This file connects the frontend and backend deployment containers for Docker or Dokploy.
+# Edit this file when container ports, shared env values, or persistent volumes change.
+# Copy a service block here when you add another small deployment service.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      APP_MODE: ${DOCKER_APP_MODE:-prod}
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8081
+      DB_PATH: /data/app.sqlite3
+      COOKIE_SECRET: ${DOCKER_COOKIE_SECRET:-change-this-in-prod}
+      FRONTEND_ORIGIN: ${DOCKER_FRONTEND_ORIGIN:-http://localhost:8088}
+    ports:
+      - "${DOCKER_BACKEND_PORT:-8089}:8081"
+    restart: unless-stopped
+    volumes:
+      - sqlite_data:/data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_URL: ${DOCKER_VITE_BACKEND_URL:-http://localhost:8089}
+    depends_on:
+      - backend
+    ports:
+      - "${DOCKER_FRONTEND_PORT:-8088}:8080"
+    restart: unless-stopped
+
+volumes:
+  sqlite_data:

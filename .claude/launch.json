@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Backend (auto-reload)",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "python", "-m", "backend.dev"],
+      "port": 8000
+    },
+    {
+      "name": "Frontend (Vite dev server)",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd frontend && VITE_BACKEND_URL=http://localhost:8000 npm run dev -- --host localhost --port 5173"],
+      "port": 5173
+    }
+  ]
+}

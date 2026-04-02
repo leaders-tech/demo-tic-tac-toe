@@ -1,0 +1,10 @@
+# This file keeps the frontend Docker build context small.
+# Edit this file when the frontend image needs another file or should skip another cache folder.
+# Copy an ignore pattern here when you add another large frontend-generated folder.
+node_modules
+dist
+playwright-report
+test-results
+.vite
+.env.development.local
+.env.production.local

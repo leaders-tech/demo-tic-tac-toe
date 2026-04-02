@@ -1,0 +1,11 @@
+# This file tells Prettier to skip generated frontend files and reports.
+# Edit this file when frontend formatting should skip another generated path.
+# Copy one line here when another generated frontend path should be ignored.
+dist
+playwright-report
+test-results
+*.tsbuildinfo
+*.d.ts
+vite.config.js
+playwright.config.js
+playwright.docker.config.js

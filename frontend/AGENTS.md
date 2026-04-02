@@ -1,0 +1,25 @@
+# Frontend Agent Notes
+
+- This frontend is for students, so keep flows obvious and easy to inspect in the browser.
+- Keep components small and readable.
+- Use plain React state and small hooks.
+- Keep auth flow explicit: login, load current user, logout, refresh.
+- Prefer simple pages over generic abstractions.
+- Keep all text in simple English for B2-level students.
+- Do not try to "improve" this template by moving it to production cross-origin API calls unless the backend architecture changes too.
+- Keep browser API calls POST-based in this template, even for read actions, because that is a deliberate teaching simplification here.
+- Add frontend unit tests for new UI states, route guards, forms, and client-side helpers.
+- Add or update Playwright tests when a feature changes login, routing, API wiring, cookies, or any flow a real user clicks through.
+- After frontend changes, open the live app and exercise the changed flow in a real browser session.
+- Check browser console and network requests for uncaught errors, 4xx/5xx responses, bad cookies, and broken WebSocket connections.
+- Do not rely on Vitest or Playwright alone when the task changes auth, routing, startup, or browser-only behavior.
+- Start each frontend source file with a short simple-English comment that says what the file does, when to edit it, and whether it can be copied for a new page, component, hook, or test.
+- Usual frontend growth pattern:
+  - add or update a page or feature component;
+  - add or update a shared helper only if more than one page needs it;
+  - add unit tests for the new browser state;
+  - add or update an e2e test if the real clicked flow changed.
+- Copy an existing page file when you add another page with similar shape.
+- Copy an existing feature panel or test file when you add another small feature block.
+- Extend an existing file only when the new code still belongs to the same page, feature, or shared helper topic.
+- Add frontend packages with `npm install` for runtime deps and `npm install -D` for dev-only deps.

@@ -1,0 +1,22 @@
+# This file keeps the root Docker build context small for the backend image.
+# Edit this file when backend Docker builds need another file or should skip another cache folder.
+# Copy an ignore pattern here when you add another large folder that Docker should not send.
+.git
+.idea
+.venv
+.pytest_cache
+.ruff_cache
+htmlcov
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+.env
+frontend
+node_modules
+dist
+playwright-report
+test-results

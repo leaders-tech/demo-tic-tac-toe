@@ -1,0 +1,40 @@
+# This file keeps the Python project settings, dependencies, and test/tool config.
+# Edit this file when Python packages or shared Python tool settings change.
+# Copy a config pattern here when you add another small shared Python tool setting.
+# Add new Python packages with `uv add` or `uv add --dev` instead of editing dependency lists by hand.
+[project]
+name = "templatepwa"
+version = "0.1.0"
+description = "Minimal PWA template with React, aiohttp, and SQLite"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "aiohttp>=3.12.15",
+    "aiosqlite>=0.21.0",
+    "argon2-cffi>=25.1.0",
+    "itsdangerous>=2.2.0",
+    "python-dotenv>=1.1.1",
+    "yoyo-migrations>=9.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+    "pytest-aiohttp>=1.1.0",
+    "pytest-asyncio>=1.1.0",
+    "ruff>=0.12.10",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 160
+target-version = "py314"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

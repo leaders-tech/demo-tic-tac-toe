@@ -1,0 +1,14 @@
+// This file keeps the TypeScript rules for frontend tool and config files.
+// Edit this file when Vite or Playwright config files need different TS support.
+// Copy a config pattern here when you add another small tool-side TS setting.
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"]
+  },
+  "include": ["vite.config.ts", "playwright.config.ts", "playwright.docker.config.ts"]
+}

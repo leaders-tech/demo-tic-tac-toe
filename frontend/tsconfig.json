@@ -1,0 +1,7 @@
+// This file links the frontend TypeScript config files together.
+// Edit this file when the frontend project needs another TS config reference.
+// Do not copy this file. Change it when the whole TS config layout changes.
+{
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+}
