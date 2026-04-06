@@ -4,13 +4,8 @@
 .DEFAULT_GOAL := help
 
 DOCKER_PROJECT_NAME := templatepwa_local
-DOCKER_FRONTEND_PORT := 8088
-DOCKER_BACKEND_PORT := 8089
-DOCKER_APP_MODE := dev
-DOCKER_COOKIE_SECRET := local-docker-secret
-DOCKER_FRONTEND_ORIGIN := http://localhost:$(DOCKER_FRONTEND_PORT)
-DOCKER_VITE_BACKEND_URL := http://localhost:$(DOCKER_BACKEND_PORT)
-DOCKER_COMPOSE := ./scripts/docker-compose.sh -p $(DOCKER_PROJECT_NAME) -f docker-compose.yml
+DOCKER_ENV_FILE := .env.docker
+DOCKER_COMPOSE := ./scripts/docker-compose.sh --env-file $(DOCKER_ENV_FILE) -p $(DOCKER_PROJECT_NAME) -f docker-compose.yml
 WIFI_IP := $(shell ipconfig getifaddr en0 2>/dev/null)
 LAN_FRONTEND_PORT := 4173
 LAN_BACKEND_PORT := 4174
@@ -20,9 +15,12 @@ PY_RUNTIME_DEPS := $(shell python3 -c 'import re, tomllib, pathlib; data = tomll
 PY_DEV_DEPS := $(shell python3 -c 'import re, tomllib, pathlib; data = tomllib.loads(pathlib.Path("pyproject.toml").read_text()); print(" ".join(re.match(r"[A-Za-z0-9._-]+", dep).group(0) for dep in data["dependency-groups"]["dev"]))')
 CHECK_WIFI_IP = @test -n "$(WIFI_IP)" || (echo "Wi-Fi IP was not found on en0. Connect to Wi-Fi or use normal make back / make front."; exit 1)
 CHECK_DOTENV = @test -f .env || (echo ".env is missing. Run make install or create .env first."; exit 1)
+CHECK_DOCKER_ENV = @test -f $(DOCKER_ENV_FILE) || (echo "$(DOCKER_ENV_FILE) is missing. Copy .env.docker.example to $(DOCKER_ENV_FILE) and update it first."; exit 1)
 LOAD_DOTENV = set -a; . ./.env; set +a
+LOAD_DOCKER_ENV = set -a; . ./$(DOCKER_ENV_FILE); set +a
 CHECK_FRONTEND_ORIGIN = test -n "$$FRONTEND_ORIGIN" || (echo "FRONTEND_ORIGIN is missing in .env."; exit 1); case "$$FRONTEND_ORIGIN" in http://localhost:*|http://127.0.0.1:*) ;; *) echo "FRONTEND_ORIGIN must look like http://localhost:5173 or http://127.0.0.1:5173 for local make commands."; exit 1 ;; esac
 CHECK_PUBLIC_BASE_URL = test -n "$$PUBLIC_BASE_URL" || (echo "PUBLIC_BASE_URL is missing in .env."; exit 1)
+CHECK_DOCKER_FRONTEND_ORIGIN = test -n "$$FRONTEND_ORIGIN" || (echo "FRONTEND_ORIGIN is missing in $(DOCKER_ENV_FILE)."; exit 1)
 
 .PHONY: help install setup back back-once front open back-lan front-lan open-lan back-docker front-docker open-docker stop-docker clean-docker format test test-e2e-docker deps-update-safe deps-update-latest
 
@@ -52,6 +50,7 @@ install setup:
 	uv sync --all-groups
 	cd frontend && npm install && npx playwright install
 	test -f .env || cp .env.example .env
+	test -f $(DOCKER_ENV_FILE) || cp .env.docker.example $(DOCKER_ENV_FILE)
 	cd frontend && test -f .env.development.local || cp .env.example .env.development.local
 
 back:
@@ -96,19 +95,26 @@ open-lan:
 	open $(LAN_FRONTEND_URL)
 
 back-docker:
-	DOCKER_APP_MODE=$(DOCKER_APP_MODE) DOCKER_COOKIE_SECRET=$(DOCKER_COOKIE_SECRET) DOCKER_FRONTEND_PORT=$(DOCKER_FRONTEND_PORT) DOCKER_BACKEND_PORT=$(DOCKER_BACKEND_PORT) DOCKER_FRONTEND_ORIGIN=$(DOCKER_FRONTEND_ORIGIN) DOCKER_VITE_BACKEND_URL=$(DOCKER_VITE_BACKEND_URL) $(DOCKER_COMPOSE) up -d --build backend
+	$(CHECK_DOCKER_ENV)
+	$(DOCKER_COMPOSE) up -d --build backend
 
 front-docker:
-	DOCKER_APP_MODE=$(DOCKER_APP_MODE) DOCKER_COOKIE_SECRET=$(DOCKER_COOKIE_SECRET) DOCKER_FRONTEND_PORT=$(DOCKER_FRONTEND_PORT) DOCKER_BACKEND_PORT=$(DOCKER_BACKEND_PORT) DOCKER_FRONTEND_ORIGIN=$(DOCKER_FRONTEND_ORIGIN) DOCKER_VITE_BACKEND_URL=$(DOCKER_VITE_BACKEND_URL) $(DOCKER_COMPOSE) up -d --build frontend
+	$(CHECK_DOCKER_ENV)
+	$(DOCKER_COMPOSE) up -d --build frontend
 
 open-docker:
-	open http://localhost:$(DOCKER_FRONTEND_PORT)
+	$(CHECK_DOCKER_ENV)
+	@$(LOAD_DOCKER_ENV); \
+	$(CHECK_DOCKER_FRONTEND_ORIGIN); \
+	open "$$FRONTEND_ORIGIN"
 
 stop-docker:
-	DOCKER_APP_MODE=$(DOCKER_APP_MODE) DOCKER_COOKIE_SECRET=$(DOCKER_COOKIE_SECRET) DOCKER_FRONTEND_PORT=$(DOCKER_FRONTEND_PORT) DOCKER_BACKEND_PORT=$(DOCKER_BACKEND_PORT) DOCKER_FRONTEND_ORIGIN=$(DOCKER_FRONTEND_ORIGIN) DOCKER_VITE_BACKEND_URL=$(DOCKER_VITE_BACKEND_URL) $(DOCKER_COMPOSE) down --remove-orphans
+	$(CHECK_DOCKER_ENV)
+	$(DOCKER_COMPOSE) down --remove-orphans
 
 clean-docker:
-	DOCKER_APP_MODE=$(DOCKER_APP_MODE) DOCKER_COOKIE_SECRET=$(DOCKER_COOKIE_SECRET) DOCKER_FRONTEND_PORT=$(DOCKER_FRONTEND_PORT) DOCKER_BACKEND_PORT=$(DOCKER_BACKEND_PORT) DOCKER_FRONTEND_ORIGIN=$(DOCKER_FRONTEND_ORIGIN) DOCKER_VITE_BACKEND_URL=$(DOCKER_VITE_BACKEND_URL) $(DOCKER_COMPOSE) down -v --remove-orphans --rmi local
+	$(CHECK_DOCKER_ENV)
+	$(DOCKER_COMPOSE) down -v --remove-orphans --rmi local
 
 deps-update-safe:
 	uv add --bounds major $(PY_RUNTIME_DEPS)

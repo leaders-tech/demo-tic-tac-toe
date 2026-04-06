@@ -27,13 +27,15 @@ from backend.tests.conftest import login
 
 def build_test_oidc_provider(
     *,
+    issuer_url: str | None = None,
     claims_overrides: dict[str, object] | None = None,
     sign_with_wrong_key: bool = False,
 ) -> web.Application:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     wrong_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     provider: dict[str, object] = {
-        "base_url": "",
+        "issuer_url": issuer_url or "",
+        "server_base_url": "",
         "client_id": "oidc-client",
         "client_secret": "oidc-secret",
         "private_key": private_key,
@@ -51,14 +53,14 @@ def build_test_oidc_provider(
     }
 
     async def discovery(request: web.Request) -> web.Response:
-        base_url = str(provider["base_url"])
+        issuer_url = str(provider["issuer_url"])
         return web.json_response(
             {
-                "issuer": base_url,
-                "authorization_endpoint": f"{base_url}/oidc/authorize",
-                "token_endpoint": f"{base_url}/oidc/token",
-                "userinfo_endpoint": f"{base_url}/oidc/userinfo",
-                "jwks_uri": f"{base_url}/oidc/jwks.json",
+                "issuer": issuer_url,
+                "authorization_endpoint": f"{issuer_url}/oidc/authorize",
+                "token_endpoint": f"{issuer_url}/oidc/token",
+                "userinfo_endpoint": f"{issuer_url}/oidc/userinfo",
+                "jwks_uri": f"{issuer_url}/oidc/jwks.json",
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "client_credentials"],
                 "subject_types_supported": ["public"],
@@ -94,7 +96,7 @@ def build_test_oidc_provider(
         access_token = f"access-{code}"
         provider["access_tokens"][access_token] = provider["user"]
         claims = {
-            "iss": provider["base_url"],
+            "iss": provider["issuer_url"],
             "sub": provider["user"]["sub"],
             "aud": client_id,
             "iat": int(now.timestamp()),
@@ -134,9 +136,14 @@ def build_test_oidc_provider(
 
 
 def configure_oidc(client, issuer_url: str) -> None:
+    configure_oidc_with_internal_base(client, issuer_url)
+
+
+def configure_oidc_with_internal_base(client, issuer_url: str, internal_base_url: str | None = None) -> None:
     settings = client.app["settings"]
     settings.public_base_url = str(client.make_url("")).rstrip("/")
     settings.oidc_issuer_url = issuer_url.rstrip("/")
+    settings.oidc_internal_base_url = internal_base_url.rstrip("/") if internal_base_url else None
     settings.oidc_client_id = "oidc-client"
     settings.oidc_client_secret = "oidc-secret"
     client.app["oidc_cache"].clear()
@@ -149,6 +156,32 @@ async def run_oidc_callback(client) -> tuple[object, str]:
     assert authorize_response.status == 302
     callback_url = authorize_response.headers["Location"]
     callback_response = await client.session.get(callback_url, allow_redirects=False)
+    return callback_response, callback_url
+
+
+async def run_oidc_callback_with_manual_provider(client, provider_server) -> tuple[object, str]:
+    from backend.auth.oidc import create_oidc_flow_cookie
+
+    settings = client.app["settings"]
+    flow_cookie_value, state, nonce = create_oidc_flow_cookie(settings)
+    authorize_response = await client.session.get(
+        f"{str(provider_server.make_url('')).rstrip('/')}/oidc/authorize",
+        params={
+            "response_type": "code",
+            "client_id": settings.oidc_client_id,
+            "redirect_uri": settings.oidc_callback_url,
+            "state": state,
+            "nonce": nonce,
+        },
+        allow_redirects=False,
+    )
+    assert authorize_response.status == 302
+    callback_url = authorize_response.headers["Location"]
+    callback_response = await client.session.get(
+        callback_url,
+        allow_redirects=False,
+        cookies={"template_oidc_flow": flow_cookie_value},
+    )
     return callback_response, callback_url
 
 
@@ -349,13 +382,32 @@ async def test_auth_options_reports_oidc_disabled_by_default(client) -> None:
 async def test_oidc_start_redirects_to_provider_and_sets_flow_cookie(client, aiohttp_server, extract_cookie) -> None:
     provider_app = build_test_oidc_provider()
     provider_server = await aiohttp_server(provider_app)
-    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
-    configure_oidc(client, provider_app["provider_state"]["base_url"])
+    provider_app["provider_state"]["server_base_url"] = str(provider_server.make_url("")).rstrip("/")
+    provider_app["provider_state"]["issuer_url"] = provider_app["provider_state"]["server_base_url"]
+    configure_oidc(client, provider_app["provider_state"]["issuer_url"])
 
     response = await client.get("/auth/oidc/start", allow_redirects=False)
 
     assert response.status == 302
-    assert response.headers["Location"].startswith(f"{provider_app['provider_state']['base_url']}/oidc/authorize?")
+    assert response.headers["Location"].startswith(f"{provider_app['provider_state']['issuer_url']}/oidc/authorize?")
+    assert extract_cookie(client, "template_oidc_flow", "/auth/oidc")
+
+
+@pytest.mark.asyncio
+async def test_oidc_start_uses_public_authorize_url_when_backend_uses_internal_base(client, aiohttp_server, extract_cookie) -> None:
+    provider_app = build_test_oidc_provider(issuer_url="https://auth.example.test")
+    provider_server = await aiohttp_server(provider_app)
+    provider_app["provider_state"]["server_base_url"] = str(provider_server.make_url("")).rstrip("/")
+    configure_oidc_with_internal_base(
+        client,
+        str(provider_app["provider_state"]["issuer_url"]),
+        provider_app["provider_state"]["server_base_url"],
+    )
+
+    response = await client.get("/auth/oidc/start", allow_redirects=False)
+
+    assert response.status == 302
+    assert response.headers["Location"].startswith("https://auth.example.test/oidc/authorize?")
     assert extract_cookie(client, "template_oidc_flow", "/auth/oidc")
 
 
@@ -363,8 +415,9 @@ async def test_oidc_start_redirects_to_provider_and_sets_flow_cookie(client, aio
 async def test_oidc_callback_rejects_missing_or_bad_state(client, aiohttp_server) -> None:
     provider_app = build_test_oidc_provider()
     provider_server = await aiohttp_server(provider_app)
-    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
-    configure_oidc(client, provider_app["provider_state"]["base_url"])
+    provider_app["provider_state"]["server_base_url"] = str(provider_server.make_url("")).rstrip("/")
+    provider_app["provider_state"]["issuer_url"] = provider_app["provider_state"]["server_base_url"]
+    configure_oidc(client, provider_app["provider_state"]["issuer_url"])
 
     response = await client.get("/auth/oidc/callback?code=anything&state=wrong", allow_redirects=False)
     assert response.status == 302
@@ -390,8 +443,9 @@ async def test_oidc_callback_rejects_missing_or_bad_state(client, aiohttp_server
 async def test_oidc_callback_rejects_invalid_tokens(client, aiohttp_server, claims_overrides, sign_with_wrong_key) -> None:
     provider_app = build_test_oidc_provider(claims_overrides=claims_overrides, sign_with_wrong_key=sign_with_wrong_key)
     provider_server = await aiohttp_server(provider_app)
-    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
-    configure_oidc(client, provider_app["provider_state"]["base_url"])
+    provider_app["provider_state"]["server_base_url"] = str(provider_server.make_url("")).rstrip("/")
+    provider_app["provider_state"]["issuer_url"] = provider_app["provider_state"]["server_base_url"]
+    configure_oidc(client, provider_app["provider_state"]["issuer_url"])
 
     callback_response, _ = await run_oidc_callback(client)
 
@@ -403,8 +457,9 @@ async def test_oidc_callback_rejects_invalid_tokens(client, aiohttp_server, clai
 async def test_oidc_first_login_auto_creates_user_and_session(client, aiohttp_server, db) -> None:
     provider_app = build_test_oidc_provider()
     provider_server = await aiohttp_server(provider_app)
-    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
-    configure_oidc(client, provider_app["provider_state"]["base_url"])
+    provider_app["provider_state"]["server_base_url"] = str(provider_server.make_url("")).rstrip("/")
+    provider_app["provider_state"]["issuer_url"] = provider_app["provider_state"]["server_base_url"]
+    configure_oidc(client, provider_app["provider_state"]["issuer_url"])
 
     callback_response, _ = await run_oidc_callback(client)
 
@@ -425,8 +480,9 @@ async def test_oidc_first_login_auto_creates_user_and_session(client, aiohttp_se
 async def test_oidc_repeated_login_reuses_linked_user(client, aiohttp_server, db) -> None:
     provider_app = build_test_oidc_provider()
     provider_server = await aiohttp_server(provider_app)
-    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
-    configure_oidc(client, provider_app["provider_state"]["base_url"])
+    provider_app["provider_state"]["server_base_url"] = str(provider_server.make_url("")).rstrip("/")
+    provider_app["provider_state"]["issuer_url"] = provider_app["provider_state"]["server_base_url"]
+    configure_oidc(client, provider_app["provider_state"]["issuer_url"])
 
     first_response, _ = await run_oidc_callback(client)
     assert first_response.status == 302
@@ -444,14 +500,35 @@ async def test_oidc_repeated_login_reuses_linked_user(client, aiohttp_server, db
 async def test_oidc_logged_in_user_is_not_admin_by_default(client, aiohttp_server) -> None:
     provider_app = build_test_oidc_provider()
     provider_server = await aiohttp_server(provider_app)
-    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
-    configure_oidc(client, provider_app["provider_state"]["base_url"])
+    provider_app["provider_state"]["server_base_url"] = str(provider_server.make_url("")).rstrip("/")
+    provider_app["provider_state"]["issuer_url"] = provider_app["provider_state"]["server_base_url"]
+    configure_oidc(client, provider_app["provider_state"]["issuer_url"])
 
     callback_response, _ = await run_oidc_callback(client)
     assert callback_response.status == 302
 
     response = await client.post("/admin/users/list", json={})
     assert response.status == 403
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_uses_internal_base_for_server_side_requests(client, aiohttp_server, db) -> None:
+    provider_app = build_test_oidc_provider(issuer_url="https://auth.example.test")
+    provider_server = await aiohttp_server(provider_app)
+    provider_app["provider_state"]["server_base_url"] = str(provider_server.make_url("")).rstrip("/")
+    configure_oidc_with_internal_base(
+        client,
+        str(provider_app["provider_state"]["issuer_url"]),
+        provider_app["provider_state"]["server_base_url"],
+    )
+
+    callback_response, _ = await run_oidc_callback_with_manual_provider(client, provider_server)
+
+    assert callback_response.status == 302
+    assert callback_response.headers["Location"] == "http://127.0.0.1:5173/lobby"
+    assert await count_sessions(db) == 1
+    users = await list_users(db)
+    assert [user["username"] for user in users] == ["alex"]
 
 
 @pytest.mark.asyncio

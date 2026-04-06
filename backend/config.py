@@ -28,6 +28,7 @@ class Settings:
     frontend_origin: str
     public_base_url: str
     oidc_issuer_url: str | None = None
+    oidc_internal_base_url: str | None = None
     oidc_client_id: str | None = None
     oidc_client_secret: str | None = None
     dev_oidc_test_mode: bool = False
@@ -64,6 +65,12 @@ class Settings:
     def oidc_callback_url(self) -> str:
         return f"{self.public_base_url.rstrip('/')}/auth/oidc/callback"
 
+    @property
+    def oidc_server_base_url(self) -> str | None:
+        if not self.oidc_enabled:
+            return None
+        return (self.oidc_internal_base_url or self.oidc_issuer_url or "").rstrip("/") or None
+
 
 def load_settings() -> Settings:
     load_dotenv()
@@ -77,6 +84,7 @@ def load_settings() -> Settings:
     frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").rstrip("/")
     public_base_url = os.getenv("PUBLIC_BASE_URL", f"http://{host}:{port}").rstrip("/")
     oidc_issuer_url = os.getenv("OIDC_ISSUER_URL", "").strip() or None
+    oidc_internal_base_url = os.getenv("OIDC_INTERNAL_BASE_URL", "").strip() or None
     oidc_client_id = os.getenv("OIDC_CLIENT_ID", "").strip() or None
     oidc_client_secret = os.getenv("OIDC_CLIENT_SECRET", "").strip() or None
     dev_oidc_test_mode = os.getenv("DEV_OIDC_TEST_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
@@ -89,6 +97,7 @@ def load_settings() -> Settings:
         frontend_origin=frontend_origin,
         public_base_url=public_base_url,
         oidc_issuer_url=oidc_issuer_url,
+        oidc_internal_base_url=oidc_internal_base_url,
         oidc_client_id=oidc_client_id,
         oidc_client_secret=oidc_client_secret,
         dev_oidc_test_mode=dev_oidc_test_mode,
@@ -107,3 +116,5 @@ def validate_settings(settings: Settings) -> None:
             raise ValueError("OIDC settings are incomplete.")
         if settings.mode == "prod" and not settings.oidc_issuer_url.startswith("https://"):
             raise ValueError("Refusing to start in prod without an https OIDC_ISSUER_URL.")
+        if settings.oidc_internal_base_url and not settings.oidc_internal_base_url.startswith(("http://", "https://")):
+            raise ValueError("OIDC_INTERNAL_BASE_URL must start with http:// or https:// when it is set.")

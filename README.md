@@ -34,6 +34,7 @@ This command:
 - installs frontend packages
 - installs Playwright browsers
 - creates local `.env` files if they do not exist yet
+- creates `.env.docker` from `.env.docker.example` if it does not exist yet
 
 ## Run on the same Wi-Fi
 
@@ -108,10 +109,87 @@ If you want local OIDC:
 - set the OIDC values in the root `.env`
 - run `make back` and `make front`
 
-For local OIDC with the auth service on `http://localhost:8000`, the callback must be:
+Use these values:
+
+```text
+OIDC_ISSUER_URL=http://localhost:8000
+OIDC_CLIENT_ID=...
+OIDC_CLIENT_SECRET=...
+```
+
+`OIDC_ISSUER_URL` is the public issuer. It is used for browser redirects and for checking the `iss` claim.
+
+If the backend must reach the auth service on a different internal URL, also set:
+
+```text
+OIDC_INTERNAL_BASE_URL=...
+```
+
+Use `OIDC_INTERNAL_BASE_URL` only for backend-to-auth-service requests such as discovery, token, JWKS, and userinfo.
+
+For local OIDC with the auth service on `http://localhost:8000`, the backend callback must be:
 
 ```text
 http://localhost:8001/auth/oidc/callback
+```
+
+Example local OIDC `.env`:
+
+```text
+APP_MODE=dev
+APP_HOST=localhost
+APP_PORT=8001
+DB_PATH=./dev.sqlite3
+COOKIE_SECRET=change-this-secret
+FRONTEND_ORIGIN=http://localhost:4175
+PUBLIC_BASE_URL=http://localhost:8001
+OIDC_ISSUER_URL=http://localhost:8000
+OIDC_CLIENT_ID=tic-tac-toe
+OIDC_CLIENT_SECRET=your-secret
+```
+
+## Docker local run
+
+Docker uses a separate file:
+
+```text
+.env.docker
+```
+
+This file is used for Docker Compose variable substitution and is also passed into the backend container.
+
+To start Docker locally:
+
+```bash
+make back-docker
+make front-docker
+make open-docker
+```
+
+If you want OIDC in Docker, put these values into `.env.docker`:
+
+```text
+OIDC_ISSUER_URL=...
+OIDC_INTERNAL_BASE_URL=...
+OIDC_CLIENT_ID=...
+OIDC_CLIENT_SECRET=...
+```
+
+Docker example when the auth service runs on your host machine:
+
+```text
+OIDC_ISSUER_URL=http://localhost:8000
+OIDC_INTERNAL_BASE_URL=http://host.docker.internal:8000
+OIDC_CLIENT_ID=tic-tac-toe
+OIDC_CLIENT_SECRET=your-secret
+```
+
+`OIDC_ISSUER_URL` must stay the real issuer from the auth service. `OIDC_INTERNAL_BASE_URL` is only the URL that the backend container uses to reach that same auth service.
+
+The example file is:
+
+```text
+.env.docker.example
 ```
 
 ## How this project was created from the template
@@ -159,4 +237,7 @@ Implement plan
 | `make open` | Open the frontend URL from `.env` |
 | `make back-lan` | Start the backend for testing on the same Wi-Fi |
 | `make front-lan` | Start the frontend for testing on the same Wi-Fi |
+| `make back-docker` | Start the backend Docker container using `.env.docker` |
+| `make front-docker` | Start the frontend Docker container using `.env.docker` |
+| `make open-docker` | Open the Docker frontend URL from `.env.docker` |
 | `make test` | Run backend, frontend, and e2e tests |

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from secrets import token_urlsafe
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import aiohttp
 import jwt
@@ -22,6 +22,50 @@ from backend.http.json_api import AppError
 
 OIDC_FLOW_COOKIE_NAME = "template_oidc_flow"
 OIDC_FLOW_TTL_SECONDS = 10 * 60
+
+
+def _normalize_base_url(url: str | None) -> str:
+    return (url or "").rstrip("/")
+
+
+def _rewrite_endpoint_base(url: str, *, source_base: str, target_base: str) -> str:
+    if not source_base or not target_base:
+        return url
+    if url == source_base:
+        return target_base
+    if url.startswith(f"{source_base}/"):
+        return f"{target_base}{url[len(source_base):]}"
+    return url
+
+
+def _replace_endpoint_origin(url: str, *, target_base: str) -> str:
+    target = urlsplit(target_base)
+    current = urlsplit(url)
+    if not target.scheme or not target.netloc or not current.scheme or not current.netloc:
+        return url
+    return urlunsplit((target.scheme, target.netloc, current.path, current.query, current.fragment))
+
+
+def _server_endpoint_url(settings: Settings, url: str) -> str:
+    internal_base = _normalize_base_url(settings.oidc_internal_base_url)
+    public_issuer = _normalize_base_url(settings.oidc_issuer_url)
+    if not internal_base or internal_base == public_issuer:
+        return url
+    rewritten = _rewrite_endpoint_base(url, source_base=public_issuer, target_base=internal_base)
+    if rewritten != url:
+        return rewritten
+    return _replace_endpoint_origin(url, target_base=internal_base)
+
+
+def _browser_endpoint_url(settings: Settings, url: str) -> str:
+    internal_base = _normalize_base_url(settings.oidc_internal_base_url)
+    public_issuer = _normalize_base_url(settings.oidc_issuer_url)
+    if not internal_base or internal_base == public_issuer:
+        return url
+    rewritten = _rewrite_endpoint_base(url, source_base=internal_base, target_base=public_issuer)
+    if rewritten != url:
+        return rewritten
+    return _replace_endpoint_origin(url, target_base=public_issuer)
 
 
 def _flow_serializer(settings: Settings) -> URLSafeTimedSerializer:
@@ -62,12 +106,16 @@ async def get_discovery_document(app) -> dict[str, Any]:
     if cached is not None:
         return cached
 
-    async with app["http_session"].get(f"{settings.oidc_issuer_url.rstrip('/')}/.well-known/openid-configuration") as response:
+    discovery_base_url = settings.oidc_server_base_url
+    if not discovery_base_url:
+        raise AppError(502, "oidc_invalid_discovery", "OIDC discovery URL is missing.")
+
+    async with app["http_session"].get(f"{discovery_base_url}/.well-known/openid-configuration") as response:
         if response.status != 200:
             raise AppError(502, "oidc_unavailable", "Could not load OIDC discovery.")
         document = await response.json()
 
-    if str(document.get("issuer", "")).rstrip("/") != settings.oidc_issuer_url.rstrip("/"):
+    if str(document.get("issuer", "")).rstrip("/") != _normalize_base_url(settings.oidc_issuer_url):
         raise AppError(502, "oidc_invalid_discovery", "OIDC discovery returned the wrong issuer.")
 
     cache["discovery"] = document
@@ -84,6 +132,7 @@ async def get_jwks_document(app) -> dict[str, Any]:
     jwks_url = str(discovery.get("jwks_uri", "")).strip()
     if not jwks_url:
         raise AppError(502, "oidc_invalid_discovery", "OIDC discovery is missing jwks_uri.")
+    jwks_url = _server_endpoint_url(app["settings"], jwks_url)
 
     async with app["http_session"].get(jwks_url) as response:
         if response.status != 200:
@@ -100,6 +149,7 @@ async def build_authorize_url(app, state: str, nonce: str) -> str:
     authorize_url = str(discovery.get("authorization_endpoint", "")).strip()
     if not authorize_url:
         raise AppError(502, "oidc_invalid_discovery", "OIDC discovery is missing authorization_endpoint.")
+    authorize_url = _browser_endpoint_url(settings, authorize_url)
     query = urlencode(
         {
             "response_type": "code",
@@ -119,6 +169,7 @@ async def exchange_code_for_tokens(app, code: str) -> dict[str, Any]:
     token_url = str(discovery.get("token_endpoint", "")).strip()
     if not token_url:
         raise AppError(502, "oidc_invalid_discovery", "OIDC discovery is missing token_endpoint.")
+    token_url = _server_endpoint_url(settings, token_url)
 
     async with app["http_session"].post(
         token_url,
@@ -164,10 +215,12 @@ def _find_signing_key(jwks_document: dict[str, Any], id_token: str):
 
 
 async def maybe_fetch_userinfo(app, access_token: str, expected_subject: str) -> dict[str, Any]:
+    settings: Settings = app["settings"]
     discovery = await get_discovery_document(app)
     userinfo_url = str(discovery.get("userinfo_endpoint", "")).strip()
     if not userinfo_url:
         return {}
+    userinfo_url = _server_endpoint_url(settings, userinfo_url)
 
     async with app["http_session"].get(userinfo_url, headers={"Authorization": f"Bearer {access_token}"}) as response:
         if response.status != 200:
