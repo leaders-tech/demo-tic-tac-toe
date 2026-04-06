@@ -1,5 +1,5 @@
 # This file gives short root commands for local development, formatting, and tests.
-# Edit this file when students need another common repo command from the project root.
+# Edit this file when common project commands or local run defaults change.
 # Copy an existing target pattern here when you add another simple root command.
 .DEFAULT_GOAL := help
 
@@ -19,16 +19,17 @@ LAN_BACKEND_URL := http://$(WIFI_IP):$(LAN_BACKEND_PORT)
 PY_RUNTIME_DEPS := $(shell python3 -c 'import re, tomllib, pathlib; data = tomllib.loads(pathlib.Path("pyproject.toml").read_text()); print(" ".join(re.match(r"[A-Za-z0-9._-]+", dep).group(0) for dep in data["project"]["dependencies"]))')
 PY_DEV_DEPS := $(shell python3 -c 'import re, tomllib, pathlib; data = tomllib.loads(pathlib.Path("pyproject.toml").read_text()); print(" ".join(re.match(r"[A-Za-z0-9._-]+", dep).group(0) for dep in data["dependency-groups"]["dev"]))')
 CHECK_WIFI_IP = @test -n "$(WIFI_IP)" || (echo "Wi-Fi IP was not found on en0. Connect to Wi-Fi or use normal make back / make front."; exit 1)
-CHECK_DOTENV = @test -f .env || (echo ".env is missing. Run make setup or create .env first."; exit 1)
+CHECK_DOTENV = @test -f .env || (echo ".env is missing. Run make install or create .env first."; exit 1)
 LOAD_DOTENV = set -a; . ./.env; set +a
 CHECK_FRONTEND_ORIGIN = test -n "$$FRONTEND_ORIGIN" || (echo "FRONTEND_ORIGIN is missing in .env."; exit 1); case "$$FRONTEND_ORIGIN" in http://localhost:*|http://127.0.0.1:*) ;; *) echo "FRONTEND_ORIGIN must look like http://localhost:5173 or http://127.0.0.1:5173 for local make commands."; exit 1 ;; esac
 CHECK_PUBLIC_BASE_URL = test -n "$$PUBLIC_BASE_URL" || (echo "PUBLIC_BASE_URL is missing in .env."; exit 1)
 
-.PHONY: help setup back back-once front open back-lan front-lan open-lan back-docker front-docker open-docker stop-docker clean-docker format test test-e2e-docker deps-update-safe deps-update-latest
+.PHONY: help install setup back back-once front open back-lan front-lan open-lan back-docker front-docker open-docker stop-docker clean-docker format test test-e2e-docker deps-update-safe deps-update-latest
 
 help:
 	@printf "Available commands:\n"
-	@printf "  make setup   Install deps and create local env files\n"
+	@printf "  make install Install deps and create local env files\n"
+	@printf "  make setup   Same as make install\n"
 	@printf "  make back    Run the backend server with auto-reload using .env\n"
 	@printf "  make back-once Run the backend server without auto-reload using .env\n"
 	@printf "  make front   Run the frontend dev server using .env\n"
@@ -47,7 +48,7 @@ help:
 	@printf "  make test    Run backend, frontend unit, and e2e tests\n"
 	@printf "  make test-e2e-docker Run e2e tests against Docker containers\n"
 
-setup:
+install setup:
 	uv sync --all-groups
 	cd frontend && npm install && npx playwright install
 	test -f .env || cp .env.example .env

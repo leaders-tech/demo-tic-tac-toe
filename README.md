@@ -1,157 +1,94 @@
-# Template PWA
+# Demo Tic-Tac-Toe
 
-This is a teaching template for school projects. It has a frontend (the part users see in a browser) and a backend (the server that stores data).
+Online layered tic-tac-toe on a 3 by 3 grid.
 
-**What is inside:**
+## Local setup
 
-- **Frontend** — React app with TypeScript, built with Vite, styled with Tailwind CSS.
-- **Backend** — Python web server using aiohttp, stores data in a SQLite file.
-- **Tests** — automated checks that verify the app works correctly.
+You can get the project in one of these two ways.
 
----
+### Option 1 — open in PyCharm
 
-## Words you will see in this guide
+Create a new project in PyCharm from this Git URL:
 
-| Word | What it means |
-|------|---------------|
-| **terminal** | A text window where you type commands. On Mac it is called Terminal, on Windows it is called Command Prompt or PowerShell. |
-| **git** | A tool that downloads and tracks code. Every command starts with `git`. |
-| **npm** | Node Package Manager — downloads JavaScript libraries that the frontend needs. |
-| **uv** | A tool that downloads Python libraries that the backend needs. |
-| **make** | A shortcut tool. `make setup` is just a shorter way to run several commands at once. |
-| **uv run** | Runs a Python command inside the project's own Python environment. |
-| **localhost** | Your own computer. `http://localhost:5173` means "open port 5173 on my own machine". |
-
----
-
-## Project folders
-
-```
-templatePWA/
-├── backend/        ← Python server code
-│   └── db/         ← Database (SQLite) code
-└── frontend/       ← React app code
+```text
+https://github.com/leaders-tech/demo-tic-tac-toe.git
 ```
 
----
-
-## Before you start — check your tools
-
-Do this once on a new machine before cloning anything.
-
-### Check uv (Python package manager)
+### Option 2 — clone in the terminal
 
 ```bash
-uv -V
+git clone https://github.com/leaders-tech/demo-tic-tac-toe.git
+cd demo-tic-tac-toe
 ```
 
-If you get "command not found", install it:
+## Install
+
+Run this once after cloning:
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+make install
 ```
 
-Then install a fresh Python:
+This command:
+- installs Python packages
+- installs frontend packages
+- installs Playwright browsers
+- creates local `.env` files if they do not exist yet
+
+## Run on the same Wi-Fi
+
+Open two terminals.
+
+### Terminal 1
 
 ```bash
-uv python install 3.14
+make back-lan
 ```
 
-### Check npm (JavaScript package manager)
+### Terminal 2
 
 ```bash
-npm -v
+make front-lan
 ```
 
-If you get "command not found", install Node.js via nvm:
+Then open the frontend URL printed by `make front-lan`.
 
-```bash
-# Install nvm:
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
-# Load nvm without restarting the terminal:
-. "$HOME/.nvm/nvm.sh"
-# Install Node.js:
-nvm install 24
+Login with:
+
+```text
+username: user
+password: user
 ```
 
----
+`make back-lan` and `make front-lan` use your Wi-Fi IP, so they are useful when you want to open the game from another device on the same network.
 
-## First-time setup
+## Run on the same computer
 
-Do this once when you first clone the project.
+If you want to run everything only on your own machine, use:
 
-### Step 1 — Download the project
-
-Open a terminal and run:
-
-```bash
-git clone https://github.com/leaders-tech/templatePWA.git templatePWA
-cd templatePWA
-```
-
-`git clone` copies the project to your computer. `cd templatePWA` moves into that folder.
-
-### Step 2 — Install everything
-
-The easiest way (one command does it all):
-
-```bash
-make setup
-```
-
-That is it. `make setup` installs Python libraries, installs JavaScript libraries, installs browser drivers for tests, and creates the `.env` config files.
-
-<details>
-<summary>What does make setup do exactly? (click to expand)</summary>
-
-If you are curious, it runs these steps one by one:
-
-```bash
-uv sync --all-groups       # installs Python libraries
-cd frontend
-npm install                # installs JavaScript libraries
-npx playwright install     # installs browsers for end-to-end tests
-cp .env.example .env.development.local
-cd ..
-cp .env.example .env
-```
-
-You do not need to run these yourself — `make setup` does it for you.
-</details>
-
----
-
-## Running the app in development
-
-You need **two terminals** open at the same time — one for the backend, one for the frontend.
-
-### Terminal 1 — start the backend (Python server)
+### Terminal 1
 
 ```bash
 make back
 ```
 
-`make back` reads the root `.env` file.
-The backend URL depends on `APP_PORT` and `PUBLIC_BASE_URL` in that file.
-
-> **With auto-reload:** `make back` already watches for file changes. If you want to run it without auto-reload, use `uv run python -m backend.main`.
-
-### Terminal 2 — start the frontend (React app)
+### Terminal 2
 
 ```bash
 make front
 ```
 
-`make front` also reads the root `.env` file.
-The frontend URL depends on `FRONTEND_ORIGIN` in that file.
-
-Open the URL from `FRONTEND_ORIGIN`, or run:
+Then run:
 
 ```bash
 make open
 ```
 
-### Default login credentials (development only)
+The exact URLs come from the root `.env` file.
+
+## Default local users
+
+These users exist only in local development:
 
 | Username | Password |
 |----------|----------|
@@ -162,260 +99,29 @@ make open
 | elias    | elias    |
 | alex     | alex     |
 
-These accounts exist only in development mode. They are not in production.
-If OIDC is enabled, the login page also shows a `Login with Leaders Auth` button.
+## Optional local OIDC login
 
-### Optional OIDC login
+This project can also log in through an external auth service.
 
-This app can keep local password login and also allow browser login through an external OIDC auth service.
-The backend is the only OIDC client. After OIDC login succeeds, this app still creates its own normal session cookies.
+If you want local OIDC:
+- run the auth service separately
+- set the OIDC values in the root `.env`
+- run `make back` and `make front`
 
-Use one of these two local modes.
-
-### Local mode 1 — simple app only
-
-Use this when you want only local password login:
-
-```text
-APP_MODE=dev
-APP_HOST=localhost
-APP_PORT=8000
-DB_PATH=./dev.sqlite3
-COOKIE_SECRET=change-this-secret
-FRONTEND_ORIGIN=http://localhost:5173
-PUBLIC_BASE_URL=http://localhost:8000
-OIDC_ISSUER_URL=
-OIDC_CLIENT_ID=
-OIDC_CLIENT_SECRET=
-```
-
-Then run:
-
-```bash
-make back
-make front
-```
-
-### Local mode 2 — app plus external auth service
-
-Use this when your auth service is already running on `http://localhost:8000`:
-
-```text
-APP_MODE=dev
-APP_HOST=localhost
-APP_PORT=8001
-DB_PATH=./dev.sqlite3
-COOKIE_SECRET=change-this-secret
-FRONTEND_ORIGIN=http://localhost:4175
-PUBLIC_BASE_URL=http://localhost:8001
-OIDC_ISSUER_URL=http://localhost:8000
-OIDC_CLIENT_ID=your-client-id
-OIDC_CLIENT_SECRET=your-client-secret
-```
-
-Then run:
-
-```bash
-make back
-make front
-```
-
-Important:
-- The external auth service must be started separately. This repo does not start it for you.
-- The OIDC callback must point to the backend, not the frontend.
-- For the OIDC local mode, allow this redirect URI in the auth service client:
+For local OIDC with the auth service on `http://localhost:8000`, the callback must be:
 
 ```text
 http://localhost:8001/auth/oidc/callback
 ```
 
----
-
-## How the frontend talks to the backend
-
-The frontend needs to know the backend address. `make front` reads `PUBLIC_BASE_URL` from the root `.env` and passes it to Vite automatically.
-
-If you start the frontend with `npm run dev` instead, create the file `frontend/.env.development.local` and put this inside:
-
-```
-VITE_BACKEND_URL=http://localhost:8000
-```
-
-For the OIDC local mode from above, use:
-
-```
-VITE_BACKEND_URL=http://localhost:8001
-```
-
-> **Important:** Always use `localhost` for both. Do not mix `localhost` and `127.0.0.1` — the browser may stop sending login cookies if you do.
-
----
-
-## Adding a new library
-
-### Python library (for the backend)
-
-```bash
-uv add package-name
-```
-
-For a library only used in development (like a testing tool):
-
-```bash
-uv add --dev package-name
-```
-
-### JavaScript library (for the frontend)
-
-```bash
-cd frontend
-npm install package-name
-```
-
-For a library only used in development:
-
-```bash
-cd frontend
-npm install -D package-name
-```
-
-> Do not edit the dependency files by hand. Use these commands instead — they also update the lock files automatically.
-
----
-
-## Running tests
-
-### Backend tests
-
-```bash
-uv run pytest
-```
-
-### Frontend unit tests
-
-```bash
-cd frontend
-npm test
-```
-
-### End-to-end tests (browser automation)
-
-```bash
-cd frontend
-npm run test:e2e
-```
-
-Playwright opens a real browser, clicks through the app, and checks that everything works.
-
-### Run all tests at once
-
-From the project root:
-
-```bash
-make test
-```
-
----
-
-## Formatting code
-
-Formatting makes code look consistent (correct indentation, spacing, etc.).
-
-Python:
-
-```bash
-uv run ruff format .
-```
-
-Frontend:
-
-```bash
-cd frontend
-npm run format
-```
-
-Or both at once:
-
-```bash
-make format
-```
-
----
-
-## Useful make shortcuts
+## Useful commands
 
 | Command | What it does |
 |---------|--------------|
-| `make setup` | First-time install of everything |
-| `make back` | Start backend with auto-reload using `.env` |
-| `make back-once` | Start backend without auto-reload using `.env` |
-| `make front` | Start frontend dev server using `.env` |
-| `make open` | Open the app URL from `.env` |
-| `make format` | Format all code |
-| `make test` | Run all tests |
-
----
-
-## Updating dependencies
-
-Safe update (stays within the same major versions — recommended):
-
-```bash
-make deps-update-safe
-```
-
-After updating, always run tests to make sure nothing broke:
-
-```bash
-make test
-make test-e2e-docker
-```
-
----
-
-## Docker (optional, for deployment)
-
-Docker packages the app into containers so it runs the same way everywhere.
-You do not need Docker for local development. Use it when you want to test how the app behaves in production.
-
-Quick local test with Docker:
-
-```bash
-make back-docker
-make front-docker
-make open-docker
-```
-
-Open in browser:
-- Frontend: `http://localhost:8088`
-- Backend health check: `http://localhost:8089/health`
-
-Stop and remove containers:
-
-```bash
-make stop-docker
-make clean-docker
-```
-
----
-
-## Security notes (for learning)
-
-- Passwords are stored as Argon2 hashes — not as plain text.
-- Login uses `HttpOnly` cookies so JavaScript cannot read them.
-- `SameSite=Lax` cookies protect against most cross-site request attacks.
-- In production, the frontend should be served by nginx or Traefik behind a reverse proxy.
-
----
-
-## Production deployment
-
-This template is designed for [Dokploy](https://dokploy.com/) with Docker Compose.
-Set these environment variables in Dokploy instead of editing the `docker-compose.yml` file:
-
-| Variable | What it is |
-|----------|------------|
-| `DOCKER_COOKIE_SECRET` | Secret key for signing cookies — use a long random string |
-| `DOCKER_FRONTEND_ORIGIN` | Public URL of the frontend, e.g. `https://myapp.example.com` |
-| `DOCKER_VITE_BACKEND_URL` | Public URL of the backend API |
-| `DOCKER_APP_MODE` | `prod` for production, `dev` to enable demo accounts |
+| `make install` | Install project dependencies and create local env files |
+| `make back` | Start the backend on this computer using `.env` |
+| `make front` | Start the frontend on this computer using `.env` |
+| `make open` | Open the frontend URL from `.env` |
+| `make back-lan` | Start the backend for testing on the same Wi-Fi |
+| `make front-lan` | Start the frontend for testing on the same Wi-Fi |
+| `make test` | Run backend, frontend, and e2e tests |
