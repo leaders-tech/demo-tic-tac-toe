@@ -114,6 +114,41 @@ For local OIDC with the auth service on `http://localhost:8000`, the callback mu
 http://localhost:8001/auth/oidc/callback
 ```
 
+## How this project was created from the template
+
+This project was created from this template:
+
+```text
+https://github.com/leaders-tech/templatePWA
+```
+
+The following prompts were used.
+
+First, in planning mode:
+
+```text
+I want to convert this template into a online tic-tac-toe game on 3 by 3 grid.
+But with modified rules:
+each player has 3 crosses or circles of 3 different sizes. And if a cell is occupied, you can still put a larger cross or circle there.
+I want to make it playable online.
+
+What should we think before start planning?
+```
+
+Then:
+
+```text
+Let's plan it and implement it
+```
+
+After that, the answers to the agent questions were given in the UI.
+
+Then:
+
+```text
+Implement plan
+```
+
 ## Useful commands
 
 | Command | What it does |
