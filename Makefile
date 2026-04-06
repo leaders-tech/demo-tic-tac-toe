@@ -11,18 +11,31 @@ DOCKER_COOKIE_SECRET := local-docker-secret
 DOCKER_FRONTEND_ORIGIN := http://localhost:$(DOCKER_FRONTEND_PORT)
 DOCKER_VITE_BACKEND_URL := http://localhost:$(DOCKER_BACKEND_PORT)
 DOCKER_COMPOSE := ./scripts/docker-compose.sh -p $(DOCKER_PROJECT_NAME) -f docker-compose.yml
+WIFI_IP := $(shell ipconfig getifaddr en0 2>/dev/null)
+LAN_FRONTEND_PORT := 4173
+LAN_BACKEND_PORT := 4174
+LAN_FRONTEND_URL := http://$(WIFI_IP):$(LAN_FRONTEND_PORT)
+LAN_BACKEND_URL := http://$(WIFI_IP):$(LAN_BACKEND_PORT)
 PY_RUNTIME_DEPS := $(shell python3 -c 'import re, tomllib, pathlib; data = tomllib.loads(pathlib.Path("pyproject.toml").read_text()); print(" ".join(re.match(r"[A-Za-z0-9._-]+", dep).group(0) for dep in data["project"]["dependencies"]))')
 PY_DEV_DEPS := $(shell python3 -c 'import re, tomllib, pathlib; data = tomllib.loads(pathlib.Path("pyproject.toml").read_text()); print(" ".join(re.match(r"[A-Za-z0-9._-]+", dep).group(0) for dep in data["dependency-groups"]["dev"]))')
+CHECK_WIFI_IP = @test -n "$(WIFI_IP)" || (echo "Wi-Fi IP was not found on en0. Connect to Wi-Fi or use normal make back / make front."; exit 1)
+CHECK_DOTENV = @test -f .env || (echo ".env is missing. Run make setup or create .env first."; exit 1)
+LOAD_DOTENV = set -a; . ./.env; set +a
+CHECK_FRONTEND_ORIGIN = test -n "$$FRONTEND_ORIGIN" || (echo "FRONTEND_ORIGIN is missing in .env."; exit 1); case "$$FRONTEND_ORIGIN" in http://localhost:*|http://127.0.0.1:*) ;; *) echo "FRONTEND_ORIGIN must look like http://localhost:5173 or http://127.0.0.1:5173 for local make commands."; exit 1 ;; esac
+CHECK_PUBLIC_BASE_URL = test -n "$$PUBLIC_BASE_URL" || (echo "PUBLIC_BASE_URL is missing in .env."; exit 1)
 
-.PHONY: help setup back back-once front open back-docker front-docker open-docker stop-docker clean-docker format test test-e2e-docker deps-update-safe deps-update-latest
+.PHONY: help setup back back-once front open back-lan front-lan open-lan back-docker front-docker open-docker stop-docker clean-docker format test test-e2e-docker deps-update-safe deps-update-latest
 
 help:
 	@printf "Available commands:\n"
 	@printf "  make setup   Install deps and create local env files\n"
-	@printf "  make back    Run the backend server with auto-reload\n"
-	@printf "  make back-once Run the backend server without auto-reload\n"
-	@printf "  make front   Run the frontend dev server\n"
-	@printf "  make open    Open the frontend in a browser\n"
+	@printf "  make back    Run the backend server with auto-reload using .env\n"
+	@printf "  make back-once Run the backend server without auto-reload using .env\n"
+	@printf "  make front   Run the frontend dev server using .env\n"
+	@printf "  make open    Open the frontend URL from .env in a browser\n"
+	@printf "  make back-lan Run the backend for testing on the same Wi-Fi\n"
+	@printf "  make front-lan Run the frontend for testing on the same Wi-Fi\n"
+	@printf "  make open-lan Open the Wi-Fi frontend URL in a browser\n"
 	@printf "  make back-docker Start the backend container for local Docker testing\n"
 	@printf "  make front-docker Start the frontend container for local Docker testing\n"
 	@printf "  make open-docker Open the Docker frontend in a browser\n"
@@ -41,16 +54,45 @@ setup:
 	cd frontend && test -f .env.development.local || cp .env.example .env.development.local
 
 back:
-	APP_HOST=localhost FRONTEND_ORIGIN=http://localhost:5173 uv run python -m backend.dev
+	$(CHECK_DOTENV)
+	@$(LOAD_DOTENV); \
+	$(CHECK_FRONTEND_ORIGIN); \
+	uv run python -m backend.dev
 
 back-once:
-	APP_HOST=localhost FRONTEND_ORIGIN=http://localhost:5173 uv run python -m backend.main
+	$(CHECK_DOTENV)
+	@$(LOAD_DOTENV); \
+	$(CHECK_FRONTEND_ORIGIN); \
+	uv run python -m backend.main
 
 front:
-	cd frontend && VITE_BACKEND_URL=http://localhost:8000 npm run dev -- --host localhost --port 5173
+	$(CHECK_DOTENV)
+	@$(LOAD_DOTENV); \
+	$(CHECK_FRONTEND_ORIGIN); \
+	$(CHECK_PUBLIC_BASE_URL); \
+	frontend_host_port=$${FRONTEND_ORIGIN#http://}; \
+	frontend_host=$${frontend_host_port%%:*}; \
+	frontend_port=$${frontend_host_port##*:}; \
+	cd frontend && VITE_BACKEND_URL="$$PUBLIC_BASE_URL" npm run dev -- --host "$$frontend_host" --port "$$frontend_port"
 
 open:
-	open http://localhost:5173
+	$(CHECK_DOTENV)
+	@$(LOAD_DOTENV); \
+	$(CHECK_FRONTEND_ORIGIN); \
+	open "$$FRONTEND_ORIGIN"
+
+back-lan:
+	$(CHECK_WIFI_IP)
+	APP_HOST=0.0.0.0 APP_PORT=$(LAN_BACKEND_PORT) FRONTEND_ORIGIN=$(LAN_FRONTEND_URL) uv run python -m backend.dev
+
+front-lan:
+	$(CHECK_WIFI_IP)
+	cd frontend && VITE_BACKEND_URL=$(LAN_BACKEND_URL) npm run dev -- --host 0.0.0.0 --port $(LAN_FRONTEND_PORT)
+
+open-lan:
+	$(CHECK_WIFI_IP)
+	@echo "Open $(LAN_FRONTEND_URL)"
+	open $(LAN_FRONTEND_URL)
 
 back-docker:
 	DOCKER_APP_MODE=$(DOCKER_APP_MODE) DOCKER_COOKIE_SECRET=$(DOCKER_COOKIE_SECRET) DOCKER_FRONTEND_PORT=$(DOCKER_FRONTEND_PORT) DOCKER_BACKEND_PORT=$(DOCKER_BACKEND_PORT) DOCKER_FRONTEND_ORIGIN=$(DOCKER_FRONTEND_ORIGIN) DOCKER_VITE_BACKEND_URL=$(DOCKER_VITE_BACKEND_URL) $(DOCKER_COMPOSE) up -d --build backend

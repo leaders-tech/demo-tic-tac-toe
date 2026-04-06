@@ -35,6 +35,11 @@ export type ApiFail = {
 
 export type ApiResponse<T> = ApiOk<T> | ApiFail;
 
+export type AuthOptions = {
+  oidc_enabled: boolean;
+  oidc_login_url: string | null;
+};
+
 export type GameSymbol = "X" | "O";
 
 export type GameSize = "small" | "medium" | "large";

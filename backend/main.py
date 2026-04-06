@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import asyncio
 
+import aiohttp
 from aiohttp import web
 
+from backend.auth.dev_oidc_provider import create_dev_oidc_provider_state, setup_dev_oidc_provider_routes
 from backend.auth.routes import setup_auth_routes
 from backend.config import Settings, load_settings, validate_settings
 from backend.db.connection import open_db
@@ -26,6 +28,7 @@ async def on_startup(app: web.Application) -> None:
     settings: Settings = app["settings"]
     run_migrations(settings.db_path, settings.migrations_path)
     app["db"] = await open_db(settings.db_path)
+    app["http_session"] = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
     await seed_dev_data(app["db"], settings)
     app["game_timeout_task"] = asyncio.create_task(game_timeout_loop(app))
 
@@ -41,6 +44,9 @@ async def on_cleanup(app: web.Application) -> None:
     db = app.get("db")
     if db is not None:
         await db.close()
+    http_session = app.get("http_session")
+    if http_session is not None:
+        await http_session.close()
 
 
 def create_app(settings: Settings | None = None) -> web.Application:
@@ -50,6 +56,10 @@ def create_app(settings: Settings | None = None) -> web.Application:
     app["settings"] = resolved_settings
     app["ws_hub"] = WebSocketHub()
     app["games_lock"] = asyncio.Lock()
+    app["oidc_cache"] = {}
+    if resolved_settings.dev_oidc_test_mode:
+        app["dev_oidc_provider"] = create_dev_oidc_provider_state(resolved_settings)
+        setup_dev_oidc_provider_routes(app)
 
     setup_auth_routes(app)
     setup_api_routes(app)

@@ -17,7 +17,7 @@ export class ApiError extends Error {
   }
 }
 
-function getBackendBaseUrl(): string {
+export function getBackendBaseUrl(): string {
   const configured = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim();
   if (configured) {
     return configured.replace(/\/$/, "");

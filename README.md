@@ -131,7 +131,8 @@ You need **two terminals** open at the same time — one for the backend, one fo
 make back
 ```
 
-The backend will be available at `http://localhost:8000`.
+`make back` reads the root `.env` file.
+The backend URL depends on `APP_PORT` and `PUBLIC_BASE_URL` in that file.
 
 > **With auto-reload:** `make back` already watches for file changes. If you want to run it without auto-reload, use `uv run python -m backend.main`.
 
@@ -141,9 +142,14 @@ The backend will be available at `http://localhost:8000`.
 make front
 ```
 
-The frontend will be available at `http://localhost:5173`.
+`make front` also reads the root `.env` file.
+The frontend URL depends on `FRONTEND_ORIGIN` in that file.
 
-Open `http://localhost:5173` in your browser to see the app.
+Open the URL from `FRONTEND_ORIGIN`, or run:
+
+```bash
+make open
+```
 
 ### Default login credentials (development only)
 
@@ -151,19 +157,94 @@ Open `http://localhost:5173` in your browser to see the app.
 |----------|----------|
 | user     | user     |
 | admin    | admin    |
+| viewer   | viewer   |
+| nikita   | nikita   |
+| elias    | elias    |
+| alex     | alex     |
 
 These accounts exist only in development mode. They are not in production.
+If OIDC is enabled, the login page also shows a `Login with Leaders Auth` button.
+
+### Optional OIDC login
+
+This app can keep local password login and also allow browser login through an external OIDC auth service.
+The backend is the only OIDC client. After OIDC login succeeds, this app still creates its own normal session cookies.
+
+Use one of these two local modes.
+
+### Local mode 1 — simple app only
+
+Use this when you want only local password login:
+
+```text
+APP_MODE=dev
+APP_HOST=localhost
+APP_PORT=8000
+DB_PATH=./dev.sqlite3
+COOKIE_SECRET=change-this-secret
+FRONTEND_ORIGIN=http://localhost:5173
+PUBLIC_BASE_URL=http://localhost:8000
+OIDC_ISSUER_URL=
+OIDC_CLIENT_ID=
+OIDC_CLIENT_SECRET=
+```
+
+Then run:
+
+```bash
+make back
+make front
+```
+
+### Local mode 2 — app plus external auth service
+
+Use this when your auth service is already running on `http://localhost:8000`:
+
+```text
+APP_MODE=dev
+APP_HOST=localhost
+APP_PORT=8001
+DB_PATH=./dev.sqlite3
+COOKIE_SECRET=change-this-secret
+FRONTEND_ORIGIN=http://localhost:4175
+PUBLIC_BASE_URL=http://localhost:8001
+OIDC_ISSUER_URL=http://localhost:8000
+OIDC_CLIENT_ID=your-client-id
+OIDC_CLIENT_SECRET=your-client-secret
+```
+
+Then run:
+
+```bash
+make back
+make front
+```
+
+Important:
+- The external auth service must be started separately. This repo does not start it for you.
+- The OIDC callback must point to the backend, not the frontend.
+- For the OIDC local mode, allow this redirect URI in the auth service client:
+
+```text
+http://localhost:8001/auth/oidc/callback
+```
 
 ---
 
 ## How the frontend talks to the backend
 
-The frontend needs to know the backend address. `make front` sets this automatically.
+The frontend needs to know the backend address. `make front` reads `PUBLIC_BASE_URL` from the root `.env` and passes it to Vite automatically.
 
 If you start the frontend with `npm run dev` instead, create the file `frontend/.env.development.local` and put this inside:
 
 ```
 VITE_BACKEND_URL=http://localhost:8000
+```
+
+For the OIDC local mode from above, use:
+
+```
+VITE_BACKEND_URL=http://localhost:8001
 ```
 
 > **Important:** Always use `localhost` for both. Do not mix `localhost` and `127.0.0.1` — the browser may stop sending login cookies if you do.
@@ -266,10 +347,10 @@ make format
 | Command | What it does |
 |---------|--------------|
 | `make setup` | First-time install of everything |
-| `make back` | Start backend with auto-reload |
-| `make back-once` | Start backend without auto-reload |
-| `make front` | Start frontend dev server |
-| `make open` | Open the app in the browser |
+| `make back` | Start backend with auto-reload using `.env` |
+| `make back-once` | Start backend without auto-reload using `.env` |
+| `make front` | Start frontend dev server using `.env` |
+| `make open` | Open the app URL from `.env` |
 | `make format` | Format all code |
 | `make test` | Run all tests |
 

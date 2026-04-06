@@ -20,6 +20,9 @@ export function HomePage() {
             Login and play
           </Link>
         </div>
+        <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
+          This app can use local passwords, and it can also redirect you to Leaders Auth when OIDC login is enabled.
+        </p>
       </div>
       <div className="rounded-[2rem] border border-slate-200/80 bg-white/80 p-8 shadow-lg shadow-slate-200/60">
         <h3 className="text-lg font-semibold text-slate-900">How the game works</h3>

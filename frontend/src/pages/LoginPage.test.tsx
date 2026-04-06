@@ -8,10 +8,17 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LoginPage } from "./LoginPage";
 import { AuthContext } from "../app/auth";
 import type { User } from "../shared/types";
+
+const postJson = vi.fn();
+
+vi.mock("../shared/api", () => ({
+  getBackendBaseUrl: () => "http://localhost:8000",
+  postJson: (...args: unknown[]) => postJson(...args),
+}));
 
 const anonymousValue = {
   user: null,
@@ -30,6 +37,11 @@ const adminUser: User = {
 };
 
 describe("LoginPage", () => {
+  beforeEach(() => {
+    postJson.mockReset();
+    postJson.mockImplementation(() => new Promise(() => {}));
+  });
+
   it("starts with empty username and password fields", () => {
     render(
       <MemoryRouter>
@@ -59,9 +71,37 @@ describe("LoginPage", () => {
     await userEvent.type(usernameInput, "admin");
     await userEvent.clear(passwordInput);
     await userEvent.type(passwordInput, "admin");
-    await userEvent.click(screen.getByRole("button", { name: "Login" }));
+    await userEvent.click(screen.getByRole("button", { name: "Login with password" }));
 
     expect(login).toHaveBeenCalledWith("admin", "admin");
+  });
+
+  it("shows the Leaders Auth button when OIDC is enabled", async () => {
+    postJson.mockResolvedValue({ oidc_enabled: true, oidc_login_url: "/auth/oidc/start" });
+    render(
+      <MemoryRouter>
+        <AuthContext.Provider value={anonymousValue}>
+          <LoginPage />
+        </AuthContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("link", { name: "Login with Leaders Auth" })).toHaveAttribute(
+      "href",
+      "http://localhost:8000/auth/oidc/start",
+    );
+  });
+
+  it("shows the OIDC callback error from the URL", () => {
+    render(
+      <MemoryRouter initialEntries={["/login?error=oidc_login_failed"]}>
+        <AuthContext.Provider value={anonymousValue}>
+          <LoginPage />
+        </AuthContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Leaders Auth login failed. Please try again.")).toBeInTheDocument();
   });
 
   it("redirects logged-in users away from login page", () => {

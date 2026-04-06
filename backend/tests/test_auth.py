@@ -6,10 +6,15 @@ Copy a test pattern here when you add another auth rule or auth endpoint.
 
 from __future__ import annotations
 
+import base64
 from datetime import UTC, datetime, timedelta
 
+import jwt
 import pytest
+from aiohttp import web
+from cryptography.hazmat.primitives.asymmetric import rsa
 
+from backend.auth.oidc import dump_jwk
 from backend.auth.tokens import build_access_token
 from backend.auth.passwords import hash_password, verify_password
 from backend.config import DEFAULT_COOKIE_SECRET, Settings
@@ -18,6 +23,133 @@ from backend.db.seed import seed_dev_data
 from backend.db.users import list_users
 from backend.main import create_app, on_cleanup, on_startup
 from backend.tests.conftest import login
+
+
+def build_test_oidc_provider(
+    *,
+    claims_overrides: dict[str, object] | None = None,
+    sign_with_wrong_key: bool = False,
+) -> web.Application:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    wrong_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    provider: dict[str, object] = {
+        "base_url": "",
+        "client_id": "oidc-client",
+        "client_secret": "oidc-secret",
+        "private_key": private_key,
+        "wrong_private_key": wrong_private_key,
+        "public_jwk": dump_jwk(private_key.public_key(), "test-key"),
+        "codes": {},
+        "access_tokens": {},
+        "claims_overrides": claims_overrides or {},
+        "sign_with_wrong_key": sign_with_wrong_key,
+        "user": {
+            "sub": "oidc-user-123",
+            "email": "alex@example.com",
+            "email_verified": True,
+        },
+    }
+
+    async def discovery(request: web.Request) -> web.Response:
+        base_url = str(provider["base_url"])
+        return web.json_response(
+            {
+                "issuer": base_url,
+                "authorization_endpoint": f"{base_url}/oidc/authorize",
+                "token_endpoint": f"{base_url}/oidc/token",
+                "userinfo_endpoint": f"{base_url}/oidc/userinfo",
+                "jwks_uri": f"{base_url}/oidc/jwks.json",
+                "response_types_supported": ["code"],
+                "grant_types_supported": ["authorization_code", "client_credentials"],
+                "subject_types_supported": ["public"],
+                "id_token_signing_alg_values_supported": ["RS256"],
+                "scopes_supported": ["openid", "email", "profile"],
+                "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+                "claims_supported": ["sub", "email", "email_verified"],
+            }
+        )
+
+    async def authorize(request: web.Request) -> web.Response:
+        redirect_uri = str(request.query["redirect_uri"])
+        state = str(request.query["state"])
+        code = f"code-{len(provider['codes']) + 1}"
+        provider["codes"][code] = {
+            "client_id": request.query["client_id"],
+            "redirect_uri": redirect_uri,
+            "nonce": request.query["nonce"],
+        }
+        return web.HTTPFound(f"{redirect_uri}?code={code}&state={state}")
+
+    async def token(request: web.Request) -> web.Response:
+        auth_header = request.headers.get("Authorization", "")
+        assert auth_header.startswith("Basic ")
+        decoded = base64.b64decode(auth_header.split(" ", 1)[1]).decode("utf-8")
+        client_id, client_secret = decoded.split(":", 1)
+        form = await request.post()
+        assert client_id == provider["client_id"]
+        assert client_secret == provider["client_secret"]
+        code = str(form["code"])
+        code_data = provider["codes"].pop(code)
+        now = datetime.now(tz=UTC)
+        access_token = f"access-{code}"
+        provider["access_tokens"][access_token] = provider["user"]
+        claims = {
+            "iss": provider["base_url"],
+            "sub": provider["user"]["sub"],
+            "aud": client_id,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=10)).timestamp()),
+            "email": provider["user"]["email"],
+            "email_verified": provider["user"]["email_verified"],
+            "nonce": code_data["nonce"],
+        }
+        claims.update(provider["claims_overrides"])
+        signing_key = provider["wrong_private_key"] if provider["sign_with_wrong_key"] else provider["private_key"]
+        id_token = jwt.encode(claims, signing_key, algorithm="RS256", headers={"kid": "test-key"})
+        return web.json_response(
+            {
+                "access_token": access_token,
+                "id_token": id_token,
+                "token_type": "Bearer",
+                "expires_in": 600,
+                "scope": "openid email profile",
+            }
+        )
+
+    async def userinfo(request: web.Request) -> web.Response:
+        access_token = request.headers["Authorization"].split(" ", 1)[1]
+        return web.json_response(provider["access_tokens"][access_token])
+
+    async def jwks(request: web.Request) -> web.Response:
+        return web.json_response({"keys": [provider["public_jwk"]]})
+
+    app = web.Application()
+    app.router.add_get("/.well-known/openid-configuration", discovery)
+    app.router.add_get("/oidc/authorize", authorize)
+    app.router.add_post("/oidc/token", token)
+    app.router.add_get("/oidc/userinfo", userinfo)
+    app.router.add_get("/oidc/jwks.json", jwks)
+    app["provider_state"] = provider
+    return app
+
+
+def configure_oidc(client, issuer_url: str) -> None:
+    settings = client.app["settings"]
+    settings.public_base_url = str(client.make_url("")).rstrip("/")
+    settings.oidc_issuer_url = issuer_url.rstrip("/")
+    settings.oidc_client_id = "oidc-client"
+    settings.oidc_client_secret = "oidc-secret"
+    client.app["oidc_cache"].clear()
+
+
+async def run_oidc_callback(client) -> tuple[object, str]:
+    start_response = await client.get("/auth/oidc/start", allow_redirects=False)
+    assert start_response.status == 302
+    authorize_response = await client.session.get(start_response.headers["Location"], allow_redirects=False)
+    assert authorize_response.status == 302
+    callback_url = authorize_response.headers["Location"]
+    callback_response = await client.session.get(callback_url, allow_redirects=False)
+    return callback_response, callback_url
 
 
 def test_password_hashing() -> None:
@@ -73,6 +205,7 @@ async def test_expired_access_cookie_returns_401(client, create_user) -> None:
         db_path=client.app["settings"].db_path,
         cookie_secret=client.app["settings"].cookie_secret,
         frontend_origin=client.app["settings"].frontend_origin,
+        public_base_url=client.app["settings"].public_base_url,
         access_ttl_seconds=-1,
     )
     expired_token = build_access_token(
@@ -184,6 +317,144 @@ async def test_logout_removes_refresh_session(client, create_user, auth_headers,
 
 
 @pytest.mark.asyncio
+async def test_bootstrap_returns_null_when_anonymous(client) -> None:
+    response = await client.post("/auth/bootstrap", json={})
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["data"]["user"] is None
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_restores_user_from_refresh_cookie(client, create_user, auth_headers, extract_cookie) -> None:
+    await create_user("user", "user")
+    await login(client, "user", "user", auth_headers)
+    refresh_cookie = extract_cookie(client, "template_refresh")
+    client.session.cookie_jar.clear()
+
+    response = await client.post("/auth/bootstrap", json={}, cookies={"template_refresh": refresh_cookie})
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["data"]["user"]["username"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_auth_options_reports_oidc_disabled_by_default(client) -> None:
+    response = await client.post("/auth/options", json={})
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["data"] == {"oidc_enabled": False, "oidc_login_url": None}
+
+
+@pytest.mark.asyncio
+async def test_oidc_start_redirects_to_provider_and_sets_flow_cookie(client, aiohttp_server, extract_cookie) -> None:
+    provider_app = build_test_oidc_provider()
+    provider_server = await aiohttp_server(provider_app)
+    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
+    configure_oidc(client, provider_app["provider_state"]["base_url"])
+
+    response = await client.get("/auth/oidc/start", allow_redirects=False)
+
+    assert response.status == 302
+    assert response.headers["Location"].startswith(f"{provider_app['provider_state']['base_url']}/oidc/authorize?")
+    assert extract_cookie(client, "template_oidc_flow", "/auth/oidc")
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_rejects_missing_or_bad_state(client, aiohttp_server) -> None:
+    provider_app = build_test_oidc_provider()
+    provider_server = await aiohttp_server(provider_app)
+    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
+    configure_oidc(client, provider_app["provider_state"]["base_url"])
+
+    response = await client.get("/auth/oidc/callback?code=anything&state=wrong", allow_redirects=False)
+    assert response.status == 302
+    assert response.headers["Location"] == "http://127.0.0.1:5173/login?error=oidc_state_invalid"
+
+    await client.get("/auth/oidc/start", allow_redirects=False)
+    bad_state_response = await client.get("/auth/oidc/callback?code=anything&state=wrong", allow_redirects=False)
+    assert bad_state_response.status == 302
+    assert bad_state_response.headers["Location"] == "http://127.0.0.1:5173/login?error=oidc_state_invalid"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("claims_overrides", "sign_with_wrong_key"),
+    [
+        ({"iss": "http://wrong-issuer.example"}, False),
+        ({"aud": "wrong-client"}, False),
+        ({"nonce": "wrong-nonce"}, False),
+        ({"exp": 1}, False),
+        ({}, True),
+    ],
+)
+async def test_oidc_callback_rejects_invalid_tokens(client, aiohttp_server, claims_overrides, sign_with_wrong_key) -> None:
+    provider_app = build_test_oidc_provider(claims_overrides=claims_overrides, sign_with_wrong_key=sign_with_wrong_key)
+    provider_server = await aiohttp_server(provider_app)
+    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
+    configure_oidc(client, provider_app["provider_state"]["base_url"])
+
+    callback_response, _ = await run_oidc_callback(client)
+
+    assert callback_response.status == 302
+    assert callback_response.headers["Location"] == "http://127.0.0.1:5173/login?error=oidc_login_failed"
+
+
+@pytest.mark.asyncio
+async def test_oidc_first_login_auto_creates_user_and_session(client, aiohttp_server, db) -> None:
+    provider_app = build_test_oidc_provider()
+    provider_server = await aiohttp_server(provider_app)
+    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
+    configure_oidc(client, provider_app["provider_state"]["base_url"])
+
+    callback_response, _ = await run_oidc_callback(client)
+
+    assert callback_response.status == 302
+    assert callback_response.headers["Location"] == "http://127.0.0.1:5173/lobby"
+    assert await count_sessions(db) == 1
+    users = await list_users(db)
+    assert [user["username"] for user in users] == ["alex"]
+
+    me_response = await client.post("/auth/me", json={})
+    assert me_response.status == 200
+    payload = await me_response.json()
+    assert payload["data"]["user"]["username"] == "alex"
+    assert payload["data"]["user"]["is_admin"] is False
+
+
+@pytest.mark.asyncio
+async def test_oidc_repeated_login_reuses_linked_user(client, aiohttp_server, db) -> None:
+    provider_app = build_test_oidc_provider()
+    provider_server = await aiohttp_server(provider_app)
+    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
+    configure_oidc(client, provider_app["provider_state"]["base_url"])
+
+    first_response, _ = await run_oidc_callback(client)
+    assert first_response.status == 302
+
+    await client.post("/auth/logout", json={}, headers={"Origin": "http://127.0.0.1:5173"})
+    second_response, _ = await run_oidc_callback(client)
+    assert second_response.status == 302
+
+    users = await list_users(db)
+    assert [user["username"] for user in users] == ["alex"]
+    assert await count_sessions(db) == 1
+
+
+@pytest.mark.asyncio
+async def test_oidc_logged_in_user_is_not_admin_by_default(client, aiohttp_server) -> None:
+    provider_app = build_test_oidc_provider()
+    provider_server = await aiohttp_server(provider_app)
+    provider_app["provider_state"]["base_url"] = str(provider_server.make_url("")).rstrip("/")
+    configure_oidc(client, provider_app["provider_state"]["base_url"])
+
+    callback_response, _ = await run_oidc_callback(client)
+    assert callback_response.status == 302
+
+    response = await client.post("/admin/users/list", json={})
+    assert response.status == 403
+
+
+@pytest.mark.asyncio
 async def test_dev_seed_only_creates_missing_users(tmp_path, monkeypatch) -> None:
     settings = Settings(
         mode="dev",
@@ -192,6 +463,7 @@ async def test_dev_seed_only_creates_missing_users(tmp_path, monkeypatch) -> Non
         db_path=tmp_path / "seed.sqlite3",
         cookie_secret="test-secret",
         frontend_origin="http://127.0.0.1:5173",
+        public_base_url="http://127.0.0.1:8081",
     )
     app = create_app(settings)
     calls: list[str] = []
@@ -221,6 +493,7 @@ def test_create_app_refuses_default_secret_in_prod(tmp_path) -> None:
         db_path=tmp_path / "prod.sqlite3",
         cookie_secret=DEFAULT_COOKIE_SECRET,
         frontend_origin="http://127.0.0.1:5173",
+        public_base_url="https://example.test",
     )
 
     with pytest.raises(ValueError, match="default COOKIE_SECRET"):

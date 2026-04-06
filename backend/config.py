@@ -26,6 +26,11 @@ class Settings:
     db_path: Path
     cookie_secret: str
     frontend_origin: str
+    public_base_url: str
+    oidc_issuer_url: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret: str | None = None
+    dev_oidc_test_mode: bool = False
     access_cookie_name: str = "template_access"
     refresh_cookie_name: str = "template_refresh"
     access_ttl_seconds: int = 2 * 60 * 60
@@ -39,7 +44,7 @@ class Settings:
     def allowed_origins(self) -> set[str]:
         origins = {self.frontend_origin.rstrip("/")}
         if self.mode != "prod":
-            origins.add(f"http://{self.host}:{self.port}")
+            origins.add(self.public_base_url.rstrip("/"))
             parsed = urlsplit(self.frontend_origin)
             if parsed.hostname == "127.0.0.1":
                 origins.add(urlunsplit((parsed.scheme, f"localhost:{parsed.port}", parsed.path, parsed.query, parsed.fragment)).rstrip("/"))
@@ -50,6 +55,14 @@ class Settings:
     @property
     def migrations_path(self) -> Path:
         return ROOT_DIR / "backend" / "migrations"
+
+    @property
+    def oidc_enabled(self) -> bool:
+        return bool(self.oidc_issuer_url and self.oidc_client_id and self.oidc_client_secret)
+
+    @property
+    def oidc_callback_url(self) -> str:
+        return f"{self.public_base_url.rstrip('/')}/auth/oidc/callback"
 
 
 def load_settings() -> Settings:
@@ -62,6 +75,11 @@ def load_settings() -> Settings:
         db_path = ROOT_DIR / db_path
     cookie_secret = os.getenv("COOKIE_SECRET", DEFAULT_COOKIE_SECRET)
     frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").rstrip("/")
+    public_base_url = os.getenv("PUBLIC_BASE_URL", f"http://{host}:{port}").rstrip("/")
+    oidc_issuer_url = os.getenv("OIDC_ISSUER_URL", "").strip() or None
+    oidc_client_id = os.getenv("OIDC_CLIENT_ID", "").strip() or None
+    oidc_client_secret = os.getenv("OIDC_CLIENT_SECRET", "").strip() or None
+    dev_oidc_test_mode = os.getenv("DEV_OIDC_TEST_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
     settings = Settings(
         mode=mode,
         host=host,
@@ -69,6 +87,11 @@ def load_settings() -> Settings:
         db_path=db_path,
         cookie_secret=cookie_secret,
         frontend_origin=frontend_origin,
+        public_base_url=public_base_url,
+        oidc_issuer_url=oidc_issuer_url,
+        oidc_client_id=oidc_client_id,
+        oidc_client_secret=oidc_client_secret,
+        dev_oidc_test_mode=dev_oidc_test_mode,
     )
     validate_settings(settings)
     return settings
@@ -77,3 +100,10 @@ def load_settings() -> Settings:
 def validate_settings(settings: Settings) -> None:
     if settings.mode == "prod" and settings.cookie_secret == DEFAULT_COOKIE_SECRET:
         raise ValueError("Refusing to start in prod with the default COOKIE_SECRET. Set a real secret in .env or your deploy env.")
+    if settings.mode == "prod" and not settings.public_base_url.startswith("https://"):
+        raise ValueError("Refusing to start in prod without an https PUBLIC_BASE_URL.")
+    if settings.oidc_enabled:
+        if settings.oidc_issuer_url is None or settings.oidc_client_id is None or settings.oidc_client_secret is None:
+            raise ValueError("OIDC settings are incomplete.")
+        if settings.mode == "prod" and not settings.oidc_issuer_url.startswith("https://"):
+            raise ValueError("Refusing to start in prod without an https OIDC_ISSUER_URL.")

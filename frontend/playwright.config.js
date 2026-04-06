@@ -12,40 +12,42 @@ var frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 var repoRoot = path.resolve(frontendRoot, "..");
 var backendUrl = "http://127.0.0.1:9010";
 var frontendUrl = "http://127.0.0.1:4173";
-var dbPath =
-  (_a = process.env.E2E_DB_PATH) !== null && _a !== void 0
-    ? _a
-    : path.join(os.tmpdir(), "templatepwa-e2e-".concat(Date.now(), "-").concat(process.pid, ".sqlite3"));
+var dbPath = (_a = process.env.E2E_DB_PATH) !== null && _a !== void 0 ? _a : path.join(os.tmpdir(), "templatepwa-e2e-".concat(Date.now(), "-").concat(process.pid, ".sqlite3"));
 var uvCacheDir = path.join(os.tmpdir(), "templatepwa-uv-cache");
 export default defineConfig({
-  testDir: "./tests/e2e",
-  use: {
-    baseURL: frontendUrl,
-  },
-  webServer: [
-    {
-      command: "uv run python -m backend.main",
-      cwd: repoRoot,
-      url: "".concat(backendUrl, "/health"),
-      reuseExistingServer: !process.env.CI,
-      env: {
-        APP_MODE: "dev",
-        APP_HOST: "127.0.0.1",
-        APP_PORT: "9010",
-        DB_PATH: dbPath,
-        COOKIE_SECRET: "playwright-secret",
-        FRONTEND_ORIGIN: frontendUrl,
-        UV_CACHE_DIR: uvCacheDir,
-      },
+    testDir: "./tests/e2e",
+    use: {
+        baseURL: frontendUrl,
     },
-    {
-      command: "npm run dev -- --host 127.0.0.1 --port 4173",
-      cwd: frontendRoot,
-      url: frontendUrl,
-      reuseExistingServer: !process.env.CI,
-      env: {
-        VITE_BACKEND_URL: backendUrl,
-      },
-    },
-  ],
+    webServer: [
+        {
+            command: "uv run python -m backend.main",
+            cwd: repoRoot,
+            url: "".concat(backendUrl, "/health"),
+            reuseExistingServer: !process.env.CI,
+            env: {
+                APP_MODE: "dev",
+                APP_HOST: "127.0.0.1",
+                APP_PORT: "9010",
+                DB_PATH: dbPath,
+                COOKIE_SECRET: "playwright-secret",
+                FRONTEND_ORIGIN: frontendUrl,
+                PUBLIC_BASE_URL: backendUrl,
+                OIDC_ISSUER_URL: backendUrl,
+                OIDC_CLIENT_ID: "playwright-client",
+                OIDC_CLIENT_SECRET: "playwright-secret-client",
+                DEV_OIDC_TEST_MODE: "1",
+                UV_CACHE_DIR: uvCacheDir,
+            },
+        },
+        {
+            command: "npm run dev -- --host 127.0.0.1 --port 4173",
+            cwd: frontendRoot,
+            url: frontendUrl,
+            reuseExistingServer: !process.env.CI,
+            env: {
+                VITE_BACKEND_URL: backendUrl,
+            },
+        },
+    ],
 });

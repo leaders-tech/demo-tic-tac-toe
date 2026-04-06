@@ -5,7 +5,7 @@ Copy the provider and hook pattern here when you add another small shared fronte
 */
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { ApiError, postJson } from "../shared/api";
+import { postJson } from "../shared/api";
 import type { User } from "../shared/types";
 
 type AuthContextValue = {
@@ -19,21 +19,8 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function loadCurrentUser(): Promise<User | null> {
-  try {
-    const data = await postJson<{ user: User }>("/auth/me");
-    return data.user;
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 401) {
-      try {
-        await postJson<{ user: User }>("/auth/refresh");
-        const refreshed = await postJson<{ user: User }>("/auth/me");
-        return refreshed.user;
-      } catch {
-        return null;
-      }
-    }
-    throw error;
-  }
+  const data = await postJson<{ user: User | null }>("/auth/bootstrap");
+  return data.user;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

@@ -7,6 +7,11 @@ Copy a test pattern here when you add another route or route guard.
 import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("../shared/api", () => ({
+  getBackendBaseUrl: () => "http://localhost:8000",
+  postJson: vi.fn().mockImplementation(() => new Promise(() => {})),
+}));
+
 vi.mock("../pages/DashboardPage", () => ({
   DashboardPage: () => <h2>Dashboard</h2>,
 }));

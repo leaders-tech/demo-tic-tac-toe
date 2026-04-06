@@ -10,7 +10,7 @@ async function login(page: Page, username: string, password: string) {
   await page.goto("/login");
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Login" }).click();
+  await page.getByRole("button", { name: "Login with password" }).click();
   await expect(page.getByRole("heading", { name: "Waiting Games" })).toBeVisible();
 }
 
@@ -28,6 +28,18 @@ function currentGameId(page: Page): number {
   }
   return Number(match[1]);
 }
+
+test("players can log in through Leaders Auth and logout again", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByRole("link", { name: "Login with Leaders Auth" }).click();
+
+  await expect(page).toHaveURL(/\/lobby$/);
+  await expect(page.getByRole("heading", { name: "Waiting Games" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Logout" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("heading", { name: "Login" })).toBeVisible();
+});
 
 test("players can create, join, and win with a covered top-row move", async ({ browser }) => {
   const xPage = await openPlayerPage(browser, "user", "user");

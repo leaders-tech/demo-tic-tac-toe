@@ -12,7 +12,9 @@ dependencies = [
     "aiohttp>=3.12.15",
     "aiosqlite>=0.21.0",
     "argon2-cffi>=25.1.0",
+    "cryptography>=46.0.6",
     "itsdangerous>=2.2.0",
+    "pyjwt>=2.12.1",
     "python-dotenv>=1.1.1",
     "yoyo-migrations>=9.0.0",
 ]
